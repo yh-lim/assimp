@@ -119,3 +119,5 @@ For the legal details, see the `LICENSE` file.
 
 ### Why this name ###
 Sorry, we're germans :-), no english native speakers ...
+
+### Forked for tuning gltf method ###
