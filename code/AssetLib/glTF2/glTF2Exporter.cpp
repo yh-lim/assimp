@@ -61,6 +61,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <limits>
 #include <memory>
 
+#include <iostream>
+
 using namespace rapidjson;
 
 using namespace Assimp;
@@ -567,10 +569,60 @@ void glTF2Exporter::GetMatTex(const aiMaterial &mat, Ref<Texture> &texture, unsi
                     //basisu: "image/ktx2", "image/basis" as is
                     texture->source->SetData(reinterpret_cast<uint8_t *>(curTex->pcData), curTex->mWidth, *mAsset);
                 } else {
-                    texture->source->uri = path;
-                    if (texture->source->uri.find(".ktx") != std::string::npos ||
-                            texture->source->uri.find(".basis") != std::string::npos) {
-                        useBasisUniversal = true;
+                    auto embedImageSource = [&]() {
+                        bool succeed = false;
+                        if (mProperties->HasPropertyBool("EMBEDDED_TEXTURE") && mProperties->GetPropertyBool("EMBEDDED_TEXTURE")) {
+                            auto GetFileName = [] (const std::string &path) {
+                                size_t lastSeparator = path.find_last_of ('/');
+                                if (lastSeparator == std::wstring::npos) {
+                                    lastSeparator = path.find_last_of ('\\');
+                                }
+                                if (lastSeparator == std::wstring::npos) {
+                                    return path;
+                                }
+                                std::string fileName = path.substr (lastSeparator + 1, path.length () - lastSeparator - 1);
+                                return fileName;
+                            };
+                            auto GetExtension = [](const std::string &path) {
+                                size_t start = path.rfind('.');
+                                return path.substr (start + 1);
+                            };
+
+                            std::string fileName = GetFileName(path);
+                            std::string ext = GetExtension(path);
+                            if (mProperties->HasPropertyCallback("FIND_IMAGE_SOURCE")) {
+                                succeed = true;
+                                std::cout << ">> source name : " << fileName << ", ext : " << ext << std::endl;
+                                void* imageDataPtr = mProperties->GetPropertyCallback("FIND_IMAGE_SOURCE")(reinterpret_cast<void *>(const_cast<char *>(fileName.c_str())));
+                                std::vector<uint8_t> *bufferPtr = reinterpret_cast<std::vector<uint8_t> *>(imageDataPtr);
+                                std::cout << ">> image source length : " << bufferPtr->size() << std::endl;
+                                texture->source->SetData(bufferPtr->data(), bufferPtr->size(), *mAsset);
+                                if (memcmp(ext.c_str(), "jpg", 3) == 0)
+                                    texture->source->mimeType = "image/jpeg";
+                                else if (memcmp(ext.c_str(), "ktx", 3) == 0) {
+                                    useBasisUniversal = true;
+                                    texture->source->mimeType += "image/ktx";
+                                } else if (memcmp(ext.c_str(), "kx2", 3) == 0) {
+                                    useBasisUniversal = true;
+                                    texture->source->mimeType += "image/ktx2";
+                                } else if (memcmp(ext.c_str(), "bu", 2) == 0) {
+                                    useBasisUniversal = true;
+                                    texture->source->mimeType += "image/basis";
+                                } else
+                                    texture->source->mimeType = "image/" + ext;
+                                delete bufferPtr;
+                            }
+                        }
+                        return succeed;
+                    };
+
+                    if (!embedImageSource()) {
+                        // set uri if failed embed source
+                        texture->source->uri = path;
+                        if (texture->source->uri.find(".ktx") != std::string::npos ||
+                                texture->source->uri.find(".basis") != std::string::npos) {
+                            useBasisUniversal = true;
+                        }
                     }
                 }
 
